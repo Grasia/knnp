@@ -1,7 +1,9 @@
-knnp : Time Series Prediction using K-Nearest Neighbors Algorithm (Parallel)
-# TFG
-===========
-First release has been developed as an End-of-Degree Project.
+# knnp : Time Series Prediction using K-Nearest Neighbors Algorithm (Parallel)
+
+First release was developed as an End-of-Degree Project.
+
+Further improvements have been made now as a project from GRASIA investigation group: 
+https://grasia.fdi.ucm.es/
 
 Purpose
 ----------
@@ -17,6 +19,15 @@ Authors
 ----------
 - Daniel Bastarrica Lacalle
 - Javier Berdecio Trigueros
+
+Directors
+----------
+- Javier Arroyo Gallardo
+- Albert Meco Alias
+
+Maintainer
+----------
+- Daniel Bastarrica Lacalle
 
 License
 ----------
