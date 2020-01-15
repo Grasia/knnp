@@ -69,6 +69,6 @@ knn <- function(y, k = 1:50, d = 1:50, initial = NULL, distance = "euclidean",
                        "while"), immediate. = TRUE)
         knn_forecast(knn_param_search(y = y, k = k, d = d, distance = distance,
                             error_measure = error_measure, weight = weight,
-                            v = v, threads = threads))
+                            initial = initial, v = v, threads = threads))
     }
 }
