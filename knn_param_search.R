@@ -55,11 +55,6 @@
 knn_param_search <- function(y, k, d, initial = NULL, distance = "euclidean",
                              error_measure = "MAE", weight = "proportional",
                              v = 1, threads = 1) {
-  require(parallelDist)
-  require(forecast)
-  require(foreach)
-  require(doParallel)
-  require(iterators)
 
   if (any(is.na(y))) {
     stop("There are NAs values in the time series")
@@ -114,7 +109,7 @@ knn_param_search <- function(y, k, d, initial = NULL, distance = "euclidean",
       stop(paste0("Package 'sibble' needed for this function to work with",
                   "tsibble objects. Please install it."), call. = FALSE)
     }
-    require(tsibble)
+
     if (length(tsibble::measured_vars(y)) < v) {
       stop(paste0("Index of variable off limits: v = ", v,
                   " but given time series has ",

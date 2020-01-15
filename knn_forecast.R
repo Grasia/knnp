@@ -35,8 +35,6 @@
 #' @export
 knn_forecast <- function(y, k, d, distance = "euclidean", weight =
                            "proportional", v = 1, threads = 1, h = 1) {
-  require(parallelDist)
-  require(parallel)
 
   # Default number of threads to be used
   if (is.null(threads)) {
@@ -91,7 +89,6 @@ knn_forecast <- function(y, k, d, distance = "euclidean", weight =
       stop("Package 'tseries' needed for this function to work with ts objects.
            Please install it.", call. = FALSE)
     }
-    require(tseries)
 
     if (NCOL(y) < v) {
       stop(paste0("Index of variable off limits: v = ", v,
@@ -109,7 +106,6 @@ knn_forecast <- function(y, k, d, distance = "euclidean", weight =
       stop(paste0("Package 'tsibble' needed for this function to work with ",
                   "tsibble objects. Please install it."), call. = FALSE)
     }
-    require(tsibble)
 
     if (length(tsibble::measured_vars(y)) < v) {
       stop(paste0("Index of variable off limits: v = ", v,
