@@ -42,8 +42,6 @@
 #' @export
 knn_past <- function(y, k, d, initial = NULL, distance = "euclidean", weight =
                        "proportional", v = 1, threads = 1) {
-  require(parallelDist)
-  require(parallel)
 
   forec <- list()
   class(forec) <- "forecast"
@@ -103,7 +101,6 @@ knn_past <- function(y, k, d, initial = NULL, distance = "euclidean", weight =
       stop("Package 'tseries' needed for this function to work with ts objects.
            Please install it.", call. = FALSE)
     }
-    require(tseries)
 
     if (NCOL(y) < v) {
       stop(paste0("Index of variable off limits: v = ", v,
@@ -121,7 +118,6 @@ knn_past <- function(y, k, d, initial = NULL, distance = "euclidean", weight =
       stop(paste0("Package 'tsibble' needed for this function to work with ",
                   "tsibble objects. Please install it."), call. = FALSE)
     }
-    require(tsibble)
 
     if (length(tsibble::measured_vars(y)) < v) {
       stop(paste0("Index of variable off limits: v = ", v,
@@ -152,6 +148,7 @@ knn_past <- function(y, k, d, initial = NULL, distance = "euclidean", weight =
 
   predictions <- array(dim = n - initial)
   neighbors <- matrix(nrow = k, ncol = n - initial)
+  knn_dists <- array(dim = n - initial)
 
   # Get 'elements' matrices (one per variable)
   distances <- plyr::alply(y, 2, function(y_col)
@@ -188,6 +185,7 @@ knn_past <- function(y, k, d, initial = NULL, distance = "euclidean", weight =
                       linear = k:1
     )
 
+    knn_dists[prediction_index] <- sum(distances_col[k_nn])
     neighbors[, prediction_index] <- (n + 2 - j - k_nn) - 1
 
     # Calculate the predicted value
@@ -215,6 +213,7 @@ knn_past <- function(y, k, d, initial = NULL, distance = "euclidean", weight =
   forec$residuals <- tail(y[, v], length(predictions)) - predictions
 
   forec$neighbors <- neighbors
+  forec$knn_dists <- knn_dists
   forec$initial <- initial
 
   return(forec)
