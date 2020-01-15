@@ -6,9 +6,6 @@
 #' @param y A matrix.
 #' @param d Length of each of the 'elements'.
 #' @return A matrix to be used for calculating distances.
-#' @examples
-#' knn_elements(matrix(AirPassengers), 2)
-#' knn_elements(matrix(LakeHuron), 6)
 knn_elements <- function(y, d) {
   n <- NROW(y)
   m <- NCOL(y)

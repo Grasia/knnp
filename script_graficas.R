@@ -10,16 +10,6 @@ colPalette <- c("royalblue", "seagreen", "orange", "aquamarine", "blueviolet", "
 pMain <- plot_ly(x = dates, y = y, type = "scatter",  name = "Observed Time Series", mode = "lines", source = "main", 
                  legendgroup = "real", hoverinfo = "x+y" , line = list(color = colPalette[1]))
 
-# pMain <- add_trace(pMain, x = sub_dates, y = naive, name = "Naive", legendgroup = "naive")
-
-# Separation lines for train and test
-# pMain <- add_segments(pMain, x = dates[train_init], xend = dates[train_init], y = min_y - 0.05 * (max_y - min_y),
-#                       yend = max_y + 0.05 * (max_y - min_y), name = "Train", showlegend = FALSE, text = "Train",
-#                       hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
-# pMain <- add_segments(pMain, x = dates[test_init], xend = dates[test_init], y = min_y - 0.05 * (max_y - min_y),
-#                       yend = max_y + 0.05 * (max_y - min_y), name = "Test", showlegend = FALSE, text = "Test",
-#                       hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
-
 # train superior
 pMain <- add_segments(pMain, x = dates[train_init+1], xend = dates[test_init], y = 1.05 * max(y[(train_init+1):test_init]),
                       yend = 1.05 * max(y[(train_init+1):test_init]), name = "Train", showlegend = FALSE, text = paste0("Train (", dates[train_init+1]," / ", dates[test_init], ")"),
@@ -38,21 +28,21 @@ pMain <- add_segments(pMain, x = dates[test_init+1], xend = dates[length(dates)]
                       hoverinfo = "text", legendgroup = "lines", line = list(color = colPalette[1], width = 1.5, dash = "dash"))
 
 pMainShapes <- list(
-    list(type = "rect",
-         fillcolor = colPalette[1], line = list(color = colPalette[1]), opacity = 0.1,
-         x0 = dates[train_init+1], x1 = dates[test_init], xref = "x", yref = "y", 
-         # y0 = min_y - 0.05 * (max_y - min_y), y1 = max_y + 0.05 * (max_y - min_y)),
-         y0 = 0.95 * min(y[(train_init+1):test_init]), y1 = 1.05 * max(y[(train_init+1):test_init]) ),
-    list(type = "rect",
-         fillcolor = colPalette[1], line = list(color = colPalette[1]), opacity = 0.15,
-         x0 = dates[test_init], x1 = dates[length(dates)], xref = "x", yref = "y",
-         # y0 = min_y - 0.05 * (max_y - min_y), y1 = max_y + 0.05 * (max_y - min_y))))
-         y0 = 0.95 * min(y[(test_init+1):n]), y1 = 1.05 * max(y[(test_init+1):n]) ) ) 
+  list(type = "rect",
+       fillcolor = colPalette[1], line = list(color = colPalette[1]), opacity = 0.1,
+       x0 = dates[train_init+1], x1 = dates[test_init], xref = "x", yref = "y", 
+       # y0 = min_y - 0.05 * (max_y - min_y), y1 = max_y + 0.05 * (max_y - min_y)),
+       y0 = 0.95 * min(y[(train_init+1):test_init]), y1 = 1.05 * max(y[(train_init+1):test_init]) ),
+  list(type = "rect",
+       fillcolor = colPalette[1], line = list(color = colPalette[1]), opacity = 0.15,
+       x0 = dates[test_init], x1 = dates[length(dates)], xref = "x", yref = "y",
+       # y0 = min_y - 0.05 * (max_y - min_y), y1 = max_y + 0.05 * (max_y - min_y))))
+       y0 = 0.95 * min(y[(test_init+1):n]), y1 = 1.05 * max(y[(test_init+1):n]) ) ) 
 
 pMainLayout <- pMain
 
 pMain <- layout(pMain, xaxis = list(range = list( dates[1], dates[length(dates)]), 
-                rangeslider = list(range = list( dates[1], dates[length(dates)]) )), shapes = pMainShapes)
+                                    rangeslider = list(range = list( dates[1], dates[length(dates)]) )), shapes = pMainShapes)
 
 pMainBase <- pMain
 
@@ -60,12 +50,39 @@ pMainBase <- pMain
 pMain <- add_trace(pMain, x = sub_dates, y = optimal$fitted, legendgroup = "optim", 
                    name = paste0("Optimal (k = ", res$opt_k, ", d = ", res$opt_d, ")"), line = list(color = colPalette[2]))
 
-#Errors
-pErrMain <- plot_ly(x = sub_dates, y = residuals_matrix[1, ], legendgroup = "optim", hoverinfo = "x+y", 
-                    name = "Optimal error", type = "scatter", mode = "markers")
-#pErrMain <- add_trace(pErrMain, x = sub_dates, y = residuals_matrix[2, ], name = "Naive error", legendgroup = "naive") 
 
-combPlotMain <- subplot(pMain, pErrMain, nrows = 2, shareX = TRUE )
+# Distances to all neighbors
+pkNNDistOptim <- plot_ly(name = "Neighbors distances", showlegend = TRUE, hoverinfo = "x+y",
+                         type = "bar", marker = list(color = colPalette[3]),
+                  # x = sub_dates, y = optimal$knn_dists/optimal$model$k)
+                  x = head(tail(dates, length(y) + 1 - train_init), length(sub_dates)),
+                  y = optimal$knn_dists/optimal$model$k)
+
+# Neighbors' future values variance plot
+pNeighVarianOptim <- plot_ly(name = "Future values variance", showlegend = TRUE, hoverinfo = "x+y",
+                             type = "bar", marker = list(color = colPalette[1]),
+                      # x = sub_dates, y = neighs_variance)
+                      x = head(tail(dates, length(y) + 1 - train_init), length(sub_dates)), y = neighs_variance)
+
+# Scatter plots
+pScatDistErrOptim <- plot_ly(name = "Distances vs Errors", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
+                             x = optimal$knn_dists, y = residuals_matrix[1, ], 
+                             text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
+                    layout(xaxis = list(title = "Distances"), yaxis = list(title = "Errors"))
+pScatDistVariOptim <- plot_ly(name = "Distances vs Variance", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
+                              x = optimal$knn_dists, y = neighs_variance, 
+                              text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
+                    layout(xaxis = list(title = "Distances"), yaxis = list(title = "Variance"))
+pScatVariErrOptim <- plot_ly(name = "Variance vs Errors", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
+                             x = neighs_variance, y = residuals_matrix[1, ], 
+                             text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
+                    layout(xaxis = list(title = "Variance"), yaxis = list(title = "Errors"))
+
+
+
+
+
+
 
 
 
@@ -103,6 +120,8 @@ pLinesBaseOpt <- plot_ly(type = "scatter", mode = "lines" , hoverinfo = "x+y" ) 
 
 
 
+
+
 #                                     Contour
 #Default
 pContourBase <- plot_ly(x = ks , y = ds, z = res$errors, transpose = TRUE, type = "contour", source = "contour", 
@@ -121,9 +140,9 @@ pContourBase <- add_trace(pContourBase, type = "scatter", mode = "markers", x = 
 
 #Worse values than Naive trimmmed
 pContourNaive <- plot_ly(x = ks , y = ds, z = res$errors, transpose = TRUE, type = "contour", source = "contour", 
-                        colorscale = "Jet", contours = list(showlabels = TRUE, coloring = "heatmap", 
-                                                            start = cont_min, end = naive_total_error),
-                        zmin = cont_min, zmax = cont_max, hoverinfo = "x+y+z")
+                         colorscale = "Jet", contours = list(showlabels = TRUE, coloring = "heatmap", 
+                                                             start = cont_min, end = naive_total_error),
+                         zmin = cont_min, zmax = cont_max, hoverinfo = "x+y+z")
 pContourNaive <- layout(pContourNaive, xaxis = list(title = "k"), yaxis = list(title = "d") )
 pContourNaive <- add_trace(pContourNaive, type = "scatter", mode = "markers", x = x_minims[1], y = y_minims[1],
                            text = paste0("Best combination\n", as.character( round(res$errors[x_minims[1], y_minims[1] ], digits = 8) ) ),
@@ -147,4 +166,3 @@ pContourTrim <- add_trace(pContourTrim, type = "scatter", mode = "markers", x = 
 #                           marker = list(color = seq(0, 1), colorscale = "[[0, 'rgb(0,255,0)'], [1, 'rgb(0,50,0)']]", size = 8), hoverinfo = "x+y+text", showlegend = FALSE)
 
 pContour <- pContourBase
-

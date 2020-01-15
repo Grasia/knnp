@@ -7,9 +7,9 @@ library(tseries)
 #####
 # Load to Enviroment "knn_param_search", "knn_past" and "knn_elements"
 
-# y <- nottem
+y <- nottem
 
-y <- datasets::sunspot.month
+# y <- datasets::sunspot.month
 dates <- as.Date(time(y))
 full_dates <- as.Date(ts( c(y,1), start = time(y)[1], frequency = frequency(y) ))
 
@@ -26,7 +26,7 @@ full_dates <- as.Date(ts( c(y,1), start = time(y)[1], frequency = frequency(y) )
 # full_dates <- as.Date(ts( c(y,1), start = time(y)[1], frequency = frequency(y) ))
 
 # y <- forecast::taylor
-# # y <- tail(y, length(y)*0.9)
+# # # y <- tail(y, length(y)*0.9)
 # dates <- 1:length(y)
 # full_dates <- c(dates, length(y) + 1)
 
@@ -34,18 +34,18 @@ n <- NROW(y)
 train_init <- floor(n * 0.75)
 test_init <- floor(n * 0.9)
 y_train <- head(y, test_init) # [1:test_init]
-distance <- "euclidean"
-error_measure <- "RMSE"
+distance <- "manhattan"
+error_measure <- "MAE"
 weight <- "proportional"
 n_threads <- 6
-ks <-  1:85
-ds <- 1:85
+ks <-  1:50
+ds <- 1:50
 min_y <- min(y)
 max_y <- max(y)
 
 # Get errors matrix, and best k and d
 res <- knn_param_search(y = y_train, k = ks, d = ds, initial = train_init, distance = distance, 
-                 error_measure = error_measure, weight = weight, threads = n_threads)
+                        error_measure = error_measure, weight = weight, threads = n_threads)
 
 # optimal_train <- knn_past(y = y_train, k = res$opt_k, d = res$opt_d, init = train_init, 
 #                           distance_metric = distance, weight = weight, threads = n_threads)
@@ -153,10 +153,7 @@ selected_points <- matrix(rep(FALSE, NROW(res$errors) * NCOL(res$errors)), nrow 
 # selected_points_aux <<- selected_points
 previous_countour <<- "default"
 
-# Index of error type
-# error_type <- switch(error_measure,
-#                      ME = 1,
-#                      RMSE = 2,
-#                      MAE = 3,
-#                      MPE = 4,
-#                      MAPE = 5)
+# Variances calc
+future_values <- matrix(y[optimal$neighbors], nrow = 3)
+neighs_variance <- rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1)
+rm(future_values)

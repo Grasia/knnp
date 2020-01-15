@@ -2,6 +2,7 @@ library(plotly)
 library(shiny)
 library(shinyWidgets)
 library(DT)
+library(rdist)
 
 # distColIndex <- function(size, row) { 
 #     end <- ((size - 1)*size/2) - ((row - 2)*(row - 1)/2 ) 
@@ -15,13 +16,15 @@ server <- function(input, output, session) {
     
     output$elemsPlot <- renderPlotly({
         pMain <<- pMainBase
-    
+        
+        # pkNNDist <- plot_ly(name = "Neighbors distances", showlegend = FALSE, hoverinfo = "x+y", type = "bar")
+        
         if ( (input$selKtabDist == res$opt_k || input$selKtabDist == "" ) && 
              (input$selDtabDist == res$opt_d || input$selDtabDist == "") ) {
             
             # Parámetros de combinación óptima
             pMain <<- add_trace(pMain, x = sub_dates, y = optimal$fitted, line = list(color = colPalette[2]), 
-                               name = paste0("Optimal (k = ", res$opt_k, ", d = ", res$opt_d, ")"), legendgroup = "optim")
+                                name = paste0("Optimal (k = ", res$opt_k, ", d = ", res$opt_d, ")"), legendgroup = "optim")
             
             errors <- residuals_matrix[1, ]
             
@@ -43,17 +46,23 @@ server <- function(input, output, session) {
                 err_low  <- min(errors) - 0.05 * (max(errors) - min(errors))
                 err_high <- max(errors) + 0.05 * (max(errors) - min(errors))
             }
+            
+            # pkNNDist <- add_trace(pkNNDist, x = sub_dates, y = optimal$knn_dists/actK)
+            # pkNNDist <- add_trace(pkNNDist, x = head(tail(dates, length(y) + 1 - train_init), length(sub_dates)), y = optimal$knn_dists/actK)
+            pkNNDist <- pkNNDistOptim
+            pNeighVarian <- pNeighVarianOptim
         }
         else {
             actK <- ifelse(input$selKtabDist == "", res$opt_k, as.numeric(input$selKtabDist))
             actD <- ifelse(input$selDtabDist == "", res$opt_d, as.numeric(input$selDtabDist))
             
-            preds <- knn_past(y = y, k = actK, d = actD, initial = train_init, distance = distance, 
-                              weight = weight, threads = n_threads)$mean
+            newPred <- knn_past(y = y, k = actK, d = actD, initial = train_init, distance = distance, 
+                                weight = weight, threads = n_threads)
+            preds <- newPred$fitted
             
             # Gráfico de predicciones 
             pMain <<- add_trace(pMain, x = sub_dates, y = preds, name = paste0("k = " , actK, ", d = " , actD, " prediction"), 
-                               legendgroup = paste("k", actK, "d", actD), line = list(color = colPalette[2]))
+                                legendgroup = paste("k", actK, "d", actD), line = list(color = colPalette[2]))
             
             errors <- y_err - preds
             
@@ -72,8 +81,20 @@ server <- function(input, output, session) {
                 err_low  <- min(errors) - 0.05 * (max(errors) - min(errors))
                 err_high <- max(errors) + 0.05 * (max(errors) - min(errors))
             }
+            
+            pkNNDist <- plot_ly(name = "Neighbors distances", showlegend = TRUE, hoverinfo = "x+y",
+                                type = "bar", marker = list(color = colPalette[3]),
+                            # x = sub_dates, y = newPred$knn_dists/actK)
+                            x = head(tail(dates, length(y) + 1 - train_init), length(sub_dates)), y = newPred$knn_dists/actK)
+            
+            future_values <- matrix(y[newPred$neighbors], nrow = 3)
+            pNeighVarian <- plot_ly(name = "Future values variance", showlegend = TRUE, hoverinfo = "x+y",
+                                    type = "bar", marker = list(color = colPalette[1]),
+                                    # x = sub_dates, 
+                                    x = head(tail(dates, length(y) + 1 - train_init), length(sub_dates)),
+                            y = rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1))
         }
-
+        
         # Clicked on main plot
         click <- event_data("plotly_click", source = "main")
         if (!is.null(click)) {
@@ -85,13 +106,13 @@ server <- function(input, output, session) {
             # y_click <- click[[4]]
             
             pMain <<- add_segments(pMain, x = click[[3]], xend = click[[3]], y = y_low, yend = y_high, 
-                                  name = "Knn", showlegend = FALSE, hoverinfo = "x", # text = "Knn",  
-                                  legendgroup = "knn", line = list(color = "blue", width = 1.5, dash = "dash"))
+                                   name = "Knn", showlegend = FALSE, hoverinfo = "x", # text = "Knn",  
+                                   legendgroup = "knn", line = list(color = "blue", width = 1.5, dash = "dash"))
             
             if ( x_click < n ) {
                 pError <<- add_segments(pError, x = full_dates[x_click+1], xend = full_dates[x_click+1], y = err_low, yend = err_high, 
-                                   name = "Knn", showlegend = FALSE, hoverinfo = "text", type = "line", mode = "line",  
-                                   legendgroup = "knn", line = list(color = "blue", width = 1.5, dash = "dash"), text = "Prediction error \n for selected")
+                                        name = "Knn", showlegend = FALSE, hoverinfo = "text", type = "line", mode = "line",  
+                                        legendgroup = "knn", line = list(color = "blue", width = 1.5, dash = "dash"), text = "Prediction error \n for selected")
             }
             
             ind <- 1
@@ -106,7 +127,7 @@ server <- function(input, output, session) {
             # distances <- rev(distances[distColIndex(attr(distances, "Size"), x_click + 1 - res$opt_d)])
             # print(paste0("Se van a comparar ", length(distances), " distancias en el grafico") )
             neighbors <- knn_forecast(y = head(y, x_click), k = actK, d = actD, distance = distance, 
-                                 weight = weight, threads = n_threads)$neighbors
+                                      weight = weight, threads = n_threads)$neighbors
             # distances <- pred$distances 
             
             for (i in neighbors)  {
@@ -115,30 +136,110 @@ server <- function(input, output, session) {
                                        legendgroup = "knn", line = list(color = "red", width = 1.5, dash = "dash"))
                 
                 # shapes[[length(shapes)+1]] <- list(type = "rect",
-                pMain[["x"]][["layoutAttrs"]][[ pMain[["x"]][["cur_data"]] ]][["shapes"]][[shapesInd]] <<- list(type = "rect",    
-                                    fillcolor = "red", line = list(color = "red"), opacity = 0.2,
-                                    x0 = dates[(i+1-actD)], x1 = dates[i], xref = "x", yref = "y",
-                                    # y0 = min_y - 0.05 * (max_y - min_y), y1 = max_y + 0.05 * (max_y - min_y)),
-                                    y0 = 0.95 * min(y[(i+1-actD):i]), y1 = 1.05 * max(y[(i+1-actD):i])) 
-                
+                pMain[["x"]][["layoutAttrs"]][[pMain[["x"]][["cur_data"]]]][["shapes"]][[shapesInd]] <<- list(type = "rect",    
+                                                                                                                fillcolor = "red", line = list(color = "red"), opacity = 0.2,
+                                                                                                                x0 = dates[(i+1-actD)], x1 = dates[i], xref = "x", yref = "y",
+                                                                                                                # y0 = min_y - 0.05 * (max_y - min_y), y1 = max_y + 0.05 * (max_y - min_y)),
+                                                                                                                y0 = 0.95 * min(y[(i+1-actD):i]), y1 = 1.05 * max(y[(i+1-actD):i])) 
+
                 ind <- ind + 1
                 shapesInd <- shapesInd + 1
             }
             # print(shapes)
             # pMain <<- layout(pMain, xaxis = list(rangeslider = list(type = "date")), shapes = shapes)
-            
+
         } 
         # else {
         #     pMain <<- layout(pMain, xaxis = list(rangeslider = list(type = "date")), shapes = pMainShapes)
         # }
-        
+
         # pMain
         #combPlotMain
-         
-        s <- subplot(pMain, pError, nrows = 2, shareX = TRUE)
+
+        # s <- subplot(pMain, pError, nrows = 2, shareX = TRUE)
+        s <- subplot(pMain, pkNNDist, pNeighVarian, pError, nrows = 4, shareX = TRUE)
         s$x$source <- "main"
         s
     })
+    
+    
+    
+    output$scattDistErr <- renderPlotly({
+        pkNNDist <- plot_ly(name  = "Neighbors distances", showlegend = FALSE, hoverinfo = "x+y", type = "bar")
+        
+        if ( (input$selKtabDist == res$opt_k || input$selKtabDist == "" ) && 
+             (input$selDtabDist == res$opt_d || input$selDtabDist == "") ) {
+            pScatDistErrOptim
+        }
+        else {
+            actK <- ifelse(input$selKtabDist == "", res$opt_k, as.numeric(input$selKtabDist))
+            actD <- ifelse(input$selDtabDist == "", res$opt_d, as.numeric(input$selDtabDist))
+            
+            newPred <- knn_past(y = y, k = actK, d = actD, initial = train_init, distance = distance, 
+                                weight = weight, threads = n_threads)
+            
+            future_values <- matrix(y[newPred$neighbors], nrow = 3)
+            variances <- rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1)
+            
+            plot_ly(name = "Distances vs Errors", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
+                                    x = newPred$knn_dists, y = (y_err - newPred$fitted), 
+                                    text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
+                layout(xaxis = list(title = "Distances"), yaxis = list(title = "Errors"))
+            
+        }
+
+    })
+    
+    output$scattDistVari <- renderPlotly({
+        pkNNDist <- plot_ly(name  = "Neighbors distances", showlegend = FALSE, hoverinfo = "x+y", type = "bar")
+        
+        if ( (input$selKtabDist == res$opt_k || input$selKtabDist == "" ) && 
+             (input$selDtabDist == res$opt_d || input$selDtabDist == "") ) {
+            pScatDistVariOptim
+        }
+        else {
+            actK <- ifelse(input$selKtabDist == "", res$opt_k, as.numeric(input$selKtabDist))
+            actD <- ifelse(input$selDtabDist == "", res$opt_d, as.numeric(input$selDtabDist))
+            
+            newPred <- knn_past(y = y, k = actK, d = actD, initial = train_init, distance = distance, 
+                                weight = weight, threads = n_threads)
+            
+            future_values <- matrix(y[newPred$neighbors], nrow = 3)
+            variances <- rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1)
+            
+            plot_ly(name = "Distances vs Variance", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
+                                     x = newPred$knn_dists, y = variances, 
+                                     text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
+                layout(xaxis = list(title = "Distances"), yaxis = list(title = "Variance"))
+            
+        }
+    })
+    
+    output$scattVariErr <- renderPlotly({
+        pkNNDist <- plot_ly(name  = "Neighbors distances", showlegend = FALSE, hoverinfo = "x+y", type = "bar")
+        
+        if ( (input$selKtabDist == res$opt_k || input$selKtabDist == "" ) && 
+             (input$selDtabDist == res$opt_d || input$selDtabDist == "") ) {
+            pScatVariErrOptim
+        }
+        else {
+            actK <- ifelse(input$selKtabDist == "", res$opt_k, as.numeric(input$selKtabDist))
+            actD <- ifelse(input$selDtabDist == "", res$opt_d, as.numeric(input$selDtabDist))
+            
+            newPred <- knn_past(y = y, k = actK, d = actD, initial = train_init, distance = distance, 
+                                weight = weight, threads = n_threads)
+            
+            future_values <- matrix(y[newPred$neighbors], nrow = 3)
+            variances <- rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1)
+            
+            plot_ly(name = "Variance vs Errors", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
+                                    x = variances, y = (y_err - newPred$fitted), 
+                                    text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
+                layout(xaxis = list(title = "Variance"), yaxis = list(title = "Errors"))
+            
+        }
+    })
+    
     
     
     output$neighborsPlot <- renderPlotly({
@@ -147,7 +248,7 @@ server <- function(input, output, session) {
             # print("Procesando click en main")
             # print(click)
             x_click <- match(as.Date(click[[3]]), dates)
-
+            
             # print(paste0("Se ha encontrado en ", x_click, " que corresponde a ", dates[x_click] ))
             # y_click <- click[[4]]
             
@@ -166,15 +267,15 @@ server <- function(input, output, session) {
             
             if ( x_click < n ) {
                 pKNN <- add_trace(pKNN, x = 0:1, y = y[x_click:(x_click + 1)], line = list(color = colPalette[1], width = 5, dash = "dash"), 
-                          name = "Observed", marker = list(color = colPalette[1], size = 7), hoverinfo = "text+y", legendgroup = "Observed",
-                          text = paste0("Observed, \n", format(dates[x_click:(x_click + 1)], format = "%B %Y")), showlegend = FALSE)
-                          # text = paste0("Observed, \n", dates[x_click:(x_click+1)]), showlegend = FALSE) 
+                                  name = "Observed", marker = list(color = colPalette[1], size = 7), hoverinfo = "text+y", legendgroup = "Observed",
+                                  text = paste0("Observed, \n", format(dates[x_click:(x_click + 1)], format = "%B %Y")), showlegend = FALSE)
+                # text = paste0("Observed, \n", dates[x_click:(x_click+1)]), showlegend = FALSE) 
             }
             
             pKNN <- add_trace(pKNN, x = 1, y = knn_forecast(y = head(y, x_click), k = actK, d = actD, 
                                                             distance = distance, weight = weight, threads = n_threads)$mean, 
-                        name = paste0("Prediction (", full_dates[(x_click + 1)], ")"), legendgroup = "Prediction", mode = "marker", hoverinfo = "text+y",
-                        marker = list(color = colPalette[2], size = 8), text = paste0("Prediction for ", full_dates[(x_click + 1)]) )
+                              name = paste0("Prediction (", full_dates[(x_click + 1)], ")"), legendgroup = "Prediction", mode = "marker", hoverinfo = "text+y",
+                              marker = list(color = colPalette[2], size = 8), text = paste0("Prediction for ", full_dates[(x_click + 1)]) )
             
             
             # distances <- parDist( knn_elements(matrix(y, ncol = NCOL(y)), d = res$opt_d), method = distance, threads = n_threads)
@@ -189,7 +290,7 @@ server <- function(input, output, session) {
             if (actK == res$opt_k && actD == res$opt_d && x_click+1 >= train_init && x_click < n) {
                 # print(x_click-train_init)
                 # print(dates[x_click])
-                for (i in optimal$neighbors[,(x_click+1-train_init)] ) {
+                for (i in optimal$neighbors[,(x_click+1-train_init)]) {
                     pKNN <- add_trace(pKNN, x = (-(actD - 1)):0, y = y[(i + 1 - actD):i], name = paste0(ind,"-NN (", dates[(i)], ")" ), legendgroup = paste0(ind,"-NN"),
                                       line = list(color = paste0("rgba(", 250 - (ind-1)*redDecr, ",40,40," , 0.9 - (ind-1)*transDecr ), width = ifelse(ind>actK/2, 3, 4)),
                                       marker = list(color = paste0("rgba(", 250 - (ind-1)*redDecr, ",40,40," , 0.9 - (ind-1)*transDecr ), size = ifelse(ind>actK/2, 5, 6)),
@@ -229,13 +330,138 @@ server <- function(input, output, session) {
             # pDists
             # subplot(pKNN, pDists, nrows = 1)
         } 
-        else {
-            NULL
-        }
+        else { NULL }
     })
-    
+
+
     
     output$distsPlot <- renderPlotly({
+        click <- event_data("plotly_click", source = "main")
+        if (!is.null(click)) {
+            # print("Procesando click en main")
+            # print(click)
+            x_click <- match(as.Date(click[[3]]), dates)
+            # print(paste0("Se ha encontrado en ", x_click, " que corresponde a ", dates[x_click] ))
+            # y_click <- click[[4]]
+
+            actK <- ifelse(input$selKtabDist == "", res$opt_k, as.numeric(input$selKtabDist))
+            actD <- ifelse(input$selDtabDist == "", res$opt_d, as.numeric(input$selDtabDist))
+
+            # distances <- parDist( knn_elements(matrix(y, ncol = NCOL(y)), d = res$opt_d), method = distance, threads = n_threads)
+            # # print(paste0("El tamaño de distancias es ", attr(distances, "Size"), " y se va a solicitar el ", x_click + 1 - res$opt_d))
+            # distances <- distances[distColIndex(attr(distances, "Size"), x_click + 1 - res$opt_d)]
+
+            # distances <- knn_elements(matrix( y[1:(x_click - 1)], ncol = NCOL(y)), d = actD)
+
+            # pKNN <- plot_ly(type = "scatter",  mode = "lines", showlegend = FALSE) %>% 
+            # add_trace(x = dates[(x_click + 1 - res$opt_d):x_click], y = y[(x_click + 1 - res$opt_d):x_click], line = list(color = colPalette[1]))
+
+            # pKNN <- plot_ly(type = "scatter",  mode = "lines", showlegend = FALSE) %>% 
+            #     add_trace(x = (-(actD - 1)):0, y = y[(x_click + 1 - actD):x_click], line = list(color = colPalette[1], width = 5), 
+            #                text = paste0("Observed, \n", format(dates[(x_click + 1 - actD):x_click], format = "%B %Y")), hoverinfo = "text+y")
+
+            # distances <- rev( cdist( matrix(y[ (x_click + 1 - actD):x_click], nrow = 1), distances) )
+
+            # colores <- rep("royalblue", length(distances))
+            #colores[ head( sort.int(distances, index.return = TRUE)$ix , res$opt_k) ] <- "red"
+
+            # ind <- 1
+            # for (i in head( sort.int(distances, index.return = TRUE)$ix , actK) ) {
+            #     # colores[i] <- "red"
+            #     # pKNN <- add_trace(pKNN, x = dates[(i + 1 - res$opt_d):i], y = y[(i + 1 - res$opt_d):i], line = list(color = "random") )
+            #     pKNN <- add_trace(pKNN, x = (-(actD - 1)):0, y = y[i:(i - 1 + actD)], line = list(color = "random", width = 3) , showlegend = FALSE,
+            #                       text = paste0(ind,"-nearest, \n", format(dates[i:(i - 1 + actD)], format = "%B %Y")), hoverinfo = "text+y")
+            #     ind <- ind + 1
+            # }
+
+            distColors <- c("darkcyan", "lightskyblue", "lightcyan")
+
+            # distances <- (max(distances)*1.1) - distances
+
+            # distances <- 1 - ((distances-(min(distances))) / (max(distances) - min(distances)))
+
+            # distances <-  min(distances) / distances
+
+
+            distances <- knn_forecast(y = head(y, x_click), k = actK, d = actD, distance = distance, 
+                                      weight = weight, threads = n_threads)$distances
+
+
+            percentile <- ifelse(input$selPerctabDist == "", 0.25, as.numeric(input$selPerctabDist))
+            percentile <- ifelse(percentile > 1, percentile/100, percentile)
+
+            index <- which(distances <= quantile(distances, probs = percentile))
+            
+            # distances <- min(distances) / distances
+            # distColors <- rev(distColors)
+            
+            sumDists <- as.vector(cdist(y[x_click+1], y[(actD+1):x_click], metric = distance))
+            
+            
+            # x = tail(head(dates, length(distances) + actD - 1), length(distances))
+            # x = window(dates, start = actD, end = x_click-1)
+            # 
+            
+            # pDists <<- plot_ly(x = tail(head(dates, length(distances) + actD - 1), length(distances))[index], y = distances[index], name  = "Knn distances",
+            #                    showlegend = FALSE, hoverinfo = "x+y", type = "bar", marker = list(color = distances[index], colors = distColors)) %>%
+            #     layout(xaxis = list( range = list(dates[(actD)], dates[(actD + length(distances) - 1)]),
+            #                          rangeslider = list( range = list(dates[ (actD)], dates[(actD + length(distances) - 1)]) ) ) )
+            # pDists <<- add_trace(pDists, x = dates[actD:x_click], y = y[actD:x_click], name  = "Time series",
+            #                 showlegend = FALSE, hoverinfo = "x+y", type = "scatter", mode = "lines", line = list(color = colPalette[1]))
+            
+            
+            
+            
+            
+            
+            
+            # pDists <<- plot_ly(x = tail(head(dates, length(distances) + actD - 1), length(distances))[index], y = distances[index], name  = "Knn distances",
+            #                    showlegend = FALSE, hoverinfo = "x+y", type = "bar", color = distances[index], colors = distColors) %>%
+            #     layout(xaxis = list( range = list(dates[(actD)], dates[(actD + length(distances) - 1)]),
+            #                          rangeslider = list( range = list(dates[ (actD)], dates[(actD + length(distances) - 1)]) ) ) )
+            
+            
+            pDists <<- plot_ly(x = dates[actD:x_click], y = y[actD:x_click], name  = "Time series", showlegend = FALSE,
+                               hoverinfo = "x+y", type = "scatter", mode = "lines", line = list(color = colPalette[1])) %>%
+                add_trace(x = tail(head(dates, length(distances) + actD - 1), length(distances))[index], y = distances[index], name  = "Knn distances",
+                          showlegend = FALSE, hoverinfo = "x+y", type = "bar", color = distances[index]) %>%
+                layout(xaxis = list( range = list(dates[(actD)], dates[(actD + length(distances) - 1)]),
+                                     rangeslider = list( range = list(dates[ (actD)], dates[(actD + length(distances) - 1)]) ) ) )
+            
+            
+            
+            
+            
+            
+            
+            
+            
+
+            # sumDists <- rev(rowSums(abs(t(t(knn_elements(matrix(head(y, x_click-1)), actD)) - y[((-actD+1):0) + x_click]))))/actD
+
+
+            # print(sumDists)
+            # print(paste0("La longitud de distancias es: ", length(sumDists)))
+            # print(paste0("La longitud de indices es: ", length(tail(head(dates, length(distances) + actD - 1), length(distances)))))
+            pNeighs <- plot_ly(x = tail(head(dates, length(distances) + actD - 1), length(distances))[index],y = sumDists[index], name  = "Next-value distances",
+                               showlegend = FALSE, hoverinfo = "x+y", type = "bar")
+
+            # pNeighs
+            subplot(pDists, pNeighs, nrows = 2, shareX = TRUE)
+            
+            
+            # pRelation <- plot_ly(x = tail(head(dates, length(distances) + actD - 1), length(distances)),y = distances/(sumDists+1), name  = "Distance relation",
+            #                    showlegend = FALSE, hoverinfo = "x+y", type = "bar")
+            # 
+            # subplot(pDists, pNeighs, pRelation, nrows = 3, shareX = TRUE)
+        } 
+        else { NULL }
+    })
+
+
+    #
+    #
+    output$relationPlot <- renderPlotly({
         click <- event_data("plotly_click", source = "main")
         if (!is.null(click)) {
             # print("Procesando click en main")
@@ -285,166 +511,53 @@ server <- function(input, output, session) {
             
             distances <- knn_forecast(y = head(y, x_click), k = actK, d = actD, distance = distance, 
                                       weight = weight, threads = n_threads)$distances
-
-
+            
+            percentile <- ifelse(input$selPerctabDist == "", 0.25, as.numeric(input$selPerctabDist))
+            percentile <- ifelse(percentile > 1, percentile/100, percentile)
+            
+            index <- which(distances <= quantile(distances, probs = percentile))
+            
             # distances <- min(distances) / distances
             # distColors <- rev(distColors)
+            
+            sumDists <- as.vector(cdist(y[x_click+1], y[(actD+1):x_click], metric = distance))
+            
 
-
+            
             # x = tail(head(dates, length(distances) + actD - 1), length(distances))
             # x = window(dates, start = actD, end = x_click-1)
-            pDists <<- plot_ly(x = tail(head(dates, length(distances) + actD - 1), length(distances)), y = distances, name  = "Knn distances",
-                              showlegend = FALSE, hoverinfo = "x+y", type = "bar", color = distances, colors = distColors) %>%
-                    layout(xaxis = list( range = list(dates[(actD)], dates[(actD + length(distances) - 1)]),
-                                        rangeslider = list( range = list(dates[ (actD)], dates[(actD + length(distances) - 1)]) ) ) )
-
+            pDists <<- plot_ly(x = tail(head(dates, length(distances) + actD - 1), length(distances))[index], y = distances[index], name  = "Knn distances",
+                               showlegend = FALSE, hoverinfo = "x+y", type = "bar", color = distances[index], colors = distColors) %>%
+                layout(xaxis = list( range = list(dates[(actD)], dates[(actD + length(distances) - 1)])  )) #,
+                                     # rangeslider = list( range = list(dates[ (actD)], dates[(actD + length(distances) - 1)]) ) ) )
+            
             # pDists
             # 
             # pKNN
             # subplot(pKNN, pDists, nrows = 1)
-
-            sumDists <- rev(rowSums(abs(t(t(knn_elements(matrix(head(y, x_click-1)), actD)) - y[((-actD+1):0) + x_click]))))/actD
-
-            # sumDists <- cdist(y[x_click+1], y[(actD):x_click], metric = distance)
-            # print(sumDists)
-            pNeighs <- plot_ly(x = tail(head(dates, length(distances) + actD - 1), length(distances)), y = sumDists, type = "bar")
-            subplot(pDists, pNeighs, nrows = 2, shareX = TRUE)
+            
+            # pNeighs
+            # subplot(pDists, pNeighs, nrows = 2, shareX = TRUE)
+            
+            
+            pRelation <- plot_ly(x = tail(head(dates, length(distances) + actD - 1), length(distances))[index],y = (distances/(sumDists))[index],
+                                 name  = "Distance relation", showlegend = FALSE, hoverinfo = "x+y", type = "bar")
+            
+            subplot(pDists, pRelation, nrows = 2, shareX = TRUE)
         } 
         else {
             NULL
         }
     })
+    #
+    #
 
-    
-    
-    
-    output$errorsPlot <- renderPlotly({
-        # This traces are always in the graphic
-        # pMain <- plot_ly(x = dates, y = y, type = "scatter",  name = "Real Time Series", mode = "lines", source = "main", 
-        #                  legendgroup = "real", hoverinfo = "x+y" ) #, line = list(color = "blue"))
-        # pMain <- add_trace(pMain, x = sub_dates, y = optimal, legendgroup = "optim", 
-        #                    name = paste0("Optimal (k = ", res$opt_k, ", d = ", res$opt_d, ")"))
-        # # pMain <- add_trace(pMain, x = sub_dates, y = naive, name = "Naive", legendgroup = "naive")
-        # # Separation lines for train and test
-        # pMain <- add_segments(pMain, x = dates[train_init], xend = dates[train_init], y = min_y - 0.05 * (max_y - min_y), 
-        #                       yend = max_y + 0.05 * (max_y - min_y), name = "Train", showlegend = FALSE, text = "Train", 
-        #                       hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
-        # pMain <- add_segments(pMain, x = dates[test_init], xend = dates[test_init], y = min_y - 0.05 * (max_y - min_y), 
-        #                       yend = max_y + 0.05 * (max_y - min_y), name = "Test", showlegend = FALSE, text = "Test", 
-        #                       hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
-        # pMain <- layout(pMain, xaxis = list(rangeslider = list(type = "date")))
-        
-        ####
-        pMain  <- pMainBase
-        ####
-        
-        if (input$chbabs == 1) {
-            pErrMain <- plot_ly(x = sub_dates, y = abs(residuals_matrix[1, ]), name = "Optimal Error",
-                                type = "scatter", mode = "markers", legendgroup = "optim", hoverinfo = "x+y")
-        }
-        else {
-            pErrMain <- plot_ly(x = sub_dates, y = residuals_matrix[1, ], name = "Optimal Error",
-                                type = "scatter", mode = "markers", legendgroup = "optim", hoverinfo = "x+y")
-        }
-        
-        # Naive activated with checkbox
-        if (input$chbnaive == 1) {
-            pMain <- add_trace(pMain, x = sub_dates, y = naive, name = "Naive", legendgroup = "naive")
-            if (input$chbabs == 1) {
-                pErrMain <- add_trace(pErrMain, x = sub_dates, y = abs(residuals_matrix[2, ]),
-                                      name = "Naive Error", legendgroup = "naive")
-            }
-            else {
-                pErrMain <- add_trace(pErrMain, x = sub_dates, y = residuals_matrix[2, ],
-                                      name = "Naive Error", legendgroup = "naive")
-            }
-        }
-        
-        if (input$chbsnaive == 1) {
-            isolate({
-                snaive <- ts(y[(train_init - as.numeric(input$s) + 1):(n - as.numeric(input$s))])
-            })
-            residuals_matrix[3, ] <- y_err - snaive
-            pMain <- add_trace(pMain, x = sub_dates, y = snaive, name = "S. Naive", legendgroup = "snaive")
-            if (input$chbabs == 1) {
-                pErrMain <- add_trace(pErrMain, x = sub_dates, y = abs(residuals_matrix[3, ]),
-                                      name = "S. Naive Error", legendgroup = "snaive")
-            }
-            else {
-                pErrMain <- add_trace(pErrMain, x = sub_dates, y = residuals_matrix[3, ],
-                                      name = "S. Naive Error", legendgroup = "snaive")
-            }
-        }
-        
-        # # Load data activated with checkbox
-        if (input$chbload == 1) {
-            isolate({
-                new_ts <- readRDS(input$path)
-                name <- basename(input$path)
-            })
-            pMain <- add_trace(pMain, x = sub_dates, y = new_ts, name = name, legendgroup = name)
-            residuals_matrix[5, ] <- y_err - new_ts
-            if (input$chbabs == 1) {
-                pErrMain <- add_trace(pErrMain, x = sub_dates, y = abs(residuals_matrix[5, ]),
-                                      name = paste(name, "Error"), legendgroup = name)
-            }
-            else {
-                pErrMain <- add_trace(pErrMain, x = sub_dates, y = residuals_matrix[5, ],
-                                      name = paste(name, "Error"), legendgroup = name)
-                
-            }
-        }
-        
-        combPlotMain <- subplot(pMain, pErrMain, nrows = 2, shareX = TRUE)
-        
-        #combPlotMain
-    })
-    
-    
-    output$table_tab1 <- renderDataTable({
-        names_col_local <- c(names_col[1])
-        errors_matrix_local <- matrix(errors_matrix_tab1[1, ], nrow = 1)
-        
-        # Naive activated with checkbox
-        if (input$chbnaive == 1) {
-            names_col_local <- c(names_col_local, names_col[2])
-            errors_matrix_local <- rbind(errors_matrix_local, errors_matrix_tab1[2, ])
-        }
-        
-        if (input$chbsnaive == 1) {
-            names_col_local <- c(names_col_local, names_col[3])
-            isolate({
-                snaive <- ts(y[(train_init - as.numeric(input$s) + 1):(n - as.numeric(input$s))])
-            })
-            train_error <- accuracy(snaive[1:length(y_train_err)], y_train_err)
-            test_error <- accuracy(snaive[(length(y_train_err) + 1):length(snaive)], y_test_err)
-            errors_matrix_tab1[3, ] <- c(train_error, test_error)
-            errors_matrix_local <- rbind(errors_matrix_local, errors_matrix_tab1[3, ])
-        }
-        
-        if (input$chbload == 1) {
-            isolate({
-                new_ts <- readRDS(input$path)
-                name <- basename(input$path)
-            })
-            names_col_local <- c(names_col_local, name)
-            train_error <- accuracy(ts(new_ts[1:length(y_train_err)]), y_train_err)
-            test_error <- accuracy(ts(new_ts[(length(y_train_err) + 1):length(new_ts)]), y_test_err)
-            errors_matrix_tab1[5, ] <- c(train_error, test_error)
-            errors_matrix_local <- rbind(errors_matrix_local, errors_matrix_tab1[5, ])
-        }
-        
-        DT::datatable(data.frame(
-            Name = names_col_local, trainME = round(errors_matrix_local[, 1], digits = 2), trainRMSE = round(errors_matrix_local[, 2], 2), 
-            trainMAE = round(errors_matrix_local[, 3], digits = 2), testME = round(errors_matrix_local[, 8], digits = 2), 
-            testRMSE = round(errors_matrix_local[, 9], 2), testMAE = round(errors_matrix_local[, 10], digits = 2)
-        ), colnames = c("Name", "ME (train)", "RMSE (train)", "MAE (train)", "ME (test)", "RMSE (test)", "MAE (test)"))
-        
-    })
-    
-    
-    
-    
+
+
+
+
+
+
     output$contourPlot <- renderPlotly({
         #pContour 
         
@@ -485,7 +598,7 @@ server <- function(input, output, session) {
                 # print("-------------------")
                 selected_points[k, d] <<- !selected_points[k, d]
                 
-
+                
             }
             
             last_click[1] <<- k
@@ -525,7 +638,7 @@ server <- function(input, output, session) {
         }
         
         nDots <- ifelse(input$contourMinims == "", 5, as.numeric(input$contourMinims))
-
+        
         if (nDots > 1 ) {
             texts <- "2nd best \n"
             if (nDots > 2 ) {
@@ -556,8 +669,8 @@ server <- function(input, output, session) {
         }
         pContour
     })
-    
-    
+
+
     output$optPlot <- renderPlotly({
         click <- event_data("plotly_click", source = "contour")
         
@@ -677,11 +790,11 @@ server <- function(input, output, session) {
                 pOpt <<- add_trace(pOpt, x = sub_dates, y = naive, name = "Naive", legendgroup = "naive", line = list(color = colPalette[3]))
                 if (input$chbabs_tab2 == 1) {
                     pErrorsOpt <<- add_trace(pErrorsOpt, x = sub_dates, y = abs(residuals_matrix[2, ]), line = list(color = colPalette[3]),
-                                            name = "Naive error", legendgroup = "naive", showlegend = FALSE)
+                                             name = "Naive error", legendgroup = "naive", showlegend = FALSE)
                 }
                 else {
                     pErrorsOpt <<- add_trace(pErrorsOpt, x = sub_dates, y = residuals_matrix[2, ], line = list(color = colPalette[3]),
-                                            name = "Naive error", legendgroup = "naive", showlegend = FALSE)
+                                             name = "Naive error", legendgroup = "naive", showlegend = FALSE)
                 }
                 
                 dif <- abs(residuals_matrix[1, ]) - abs(residuals_matrix[2, ])
@@ -709,11 +822,11 @@ server <- function(input, output, session) {
                 pOpt <<- add_trace(pOpt, x = sub_dates, y = snaive, name = paste0("S. Naive (", seasLag, ")"), legendgroup = "snaive", line = list(color = colPalette[4]))
                 if (input$chbabs_tab2 == 1) {
                     pErrorsOpt <<- add_trace(pErrorsOpt, x = sub_dates, y = abs(residuals_matrix[3, ]), line = list(color = colPalette[4]),
-                                            name = "S. Naive error", legendgroup = "snaive", showlegend = FALSE)
+                                             name = "S. Naive error", legendgroup = "snaive", showlegend = FALSE)
                 }
                 else {
                     pErrorsOpt <<- add_trace(pErrorsOpt, x = sub_dates, y = residuals_matrix[3, ], line = list(color = colPalette[4]),
-                                            name = "S. Naive error", legendgroup = "snaive", showlegend = FALSE)
+                                             name = "S. Naive error", legendgroup = "snaive", showlegend = FALSE)
                 }
                 
                 dif <- abs(residuals_matrix[1, ]) - abs(residuals_matrix[3, ])
@@ -750,13 +863,13 @@ server <- function(input, output, session) {
                             error <- y_err - preds
                             if (input$chbabs_tab2 == 1) { 
                                 pErrorsOpt <<- add_trace(pErrorsOpt, x = sub_dates, y = abs(error), line = list(color = colPalette[colorIndex]), showlegend = FALSE,
-                                                       name = paste0("k = " , i, ", d = " , j, "", " error"), legendgroup = paste("k", i, "d", j))
+                                                         name = paste0("k = " , i, ", d = " , j, "", " error"), legendgroup = paste("k", i, "d", j))
                                 mini <- min( mini, abs(error))
                                 maxi <- max( maxi, abs(error))
                             }
                             else {
                                 pErrorsOpt <<- add_trace(pErrorsOpt, x = sub_dates, y = error, line = list(color = colPalette[colorIndex]), showlegend = FALSE,
-                                                       name = paste0("k = " , i, ", d = " , j, "", " error"), legendgroup = paste("k", i, "d", j))
+                                                         name = paste0("k = " , i, ", d = " , j, "", " error"), legendgroup = paste("k", i, "d", j))
                                 mini <- min( mini, error)
                                 maxi <- max( maxi, error)
                             }
@@ -769,7 +882,7 @@ server <- function(input, output, session) {
                             }
                             else {
                                 pComparOptim <<- add_trace(pComparOptim, x = sub_dates, y = dif, marker = list(color = colPalette[colorIndex]), showlegend = FALSE,
-                                                       name = paste0("k = " , i, ", d = " , j, "", " comparison"), legendgroup = paste("k", i, "d", j))
+                                                           name = paste0("k = " , i, ", d = " , j, "", " comparison"), legendgroup = paste("k", i, "d", j))
                             }
                             
                             min_compar <- min( min_compar, dif)
@@ -781,18 +894,18 @@ server <- function(input, output, session) {
             }
             
             pErrorsOpt <<- add_segments(pErrorsOpt, x = dates[train_init], xend = dates[train_init], y = mini - 0.05 * (maxi - mini), 
-                                       yend = maxi + 0.05 * (maxi - mini), name = "Train", showlegend = FALSE, text = "Train", 
-                                       hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
+                                        yend = maxi + 0.05 * (maxi - mini), name = "Train", showlegend = FALSE, text = "Train", 
+                                        hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
             pErrorsOpt <<- add_segments(pErrorsOpt, x = dates[test_init], xend = dates[test_init], y = mini - 0.05 * (maxi - mini), 
-                                       yend = maxi + 0.05 * (maxi - mini), name = "Test", showlegend = FALSE, text = "Test", 
-                                       hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
-
+                                        yend = maxi + 0.05 * (maxi - mini), name = "Test", showlegend = FALSE, text = "Test", 
+                                        hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
+            
             pComparOptim <<- add_segments(pComparOptim, x = dates[train_init], xend = dates[train_init], y = min_compar - 0.05 * (max_compar - min_compar), 
-                                       yend = max_compar + 0.05 * (max_compar - min_compar), name = "Train", showlegend = FALSE, text = "Train", 
-                                       hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
+                                          yend = max_compar + 0.05 * (max_compar - min_compar), name = "Train", showlegend = FALSE, text = "Train", 
+                                          hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
             pComparOptim <<- add_segments(pComparOptim, x = dates[test_init], xend = dates[test_init], y = min_compar - 0.05 * (max_compar - min_compar), 
-                                       yend = max_compar + 0.05 * (max_compar - min_compar), name = "Test", showlegend = FALSE, text = "Test", 
-                                       hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
+                                          yend = max_compar + 0.05 * (max_compar - min_compar), name = "Test", showlegend = FALSE, text = "Test", 
+                                          hoverinfo = "text", legendgroup = "lines", line = list(color = "gray", width = 1.5, dash = "dash"))
             
             combPlotOpt <<- subplot(pOpt, pErrorsOpt, pComparOptim, nrows = 3, shareX = TRUE )
             # return(subplot(pOpt, pErrorsOpt, pComparOptim, nrows = 3, shareX = TRUE))
@@ -801,8 +914,8 @@ server <- function(input, output, session) {
         combPlotOpt
         
     })
-    
- 
+
+
     output$table_OptimTab <- renderDataTable({
         
         click <- event_data("plotly_click", source = "contour")
@@ -824,7 +937,7 @@ server <- function(input, output, session) {
         
         names_col_local <- c(names_col[1])
         errors_matrix_local <- matrix(errors_matrix[1, ], nrow = 1)
-
+        
         # Naive activated with checkbox
         if (input$chbNaiveOpt == 1) {
             names_col_local <- c(names_col_local, names_col[2])
@@ -865,109 +978,134 @@ server <- function(input, output, session) {
             trainMAE = round(errors_matrix_local[, 3], digits = 8), testME = round(errors_matrix_local[, 6], digits = 8),
             testRMSE = round(errors_matrix_local[, 7], 8), testMAE = round(errors_matrix_local[, 8], digits = 8)
         ), colnames = c("Name", "ME (train)", "RMSE (train)", "MAE (train)", "ME (test)", "RMSE (test)", "MAE (test)"))
-
+        
         
     })
-    
-    
+
+
 } 
 
 ui <- navbarPage("",
                  tabPanel("Distances",
-                          # fluidPage(
+                          fluidPage(
                           headerPanel("Distances between elements"),
-                          mainPanel(width = 10,
-                              plotlyOutput("elemsPlot")
-                              # plotlyOutput("neighborsPlot"),
-                              # plotlyOutput("distsPlot")
-                          ),
-                          sidebarPanel(width = 2,
-                              tags$head(
-                                  tags$style(HTML("hr {border-top: 1px solid #cbcbcb;}"))
-                              ),
-                              # checkboxInput("chbsnaive", label = "Seasonal Naive", value = FALSE), 
-                              textInput(inputId = "selKtabDist", label = "K", value = res$opt_k, 
-                                        width = NULL, placeholder = "Value for K (blank for Optimal)"),
-                              textInput(inputId = "selDtabDist", label = "D", value = res$opt_d, 
-                                        width = NULL, placeholder = "Value for D (blank for Optimal)"),
-                              # actionButton("browse", "Browse"),
-                              hr(),
-                              materialSwitch(inputId = "chbabsDist", label = "Absolute Error", value = TRUE, status = "primary")
-                              
-                              
-                              #prettyCheckbox("chbabs", label = "Absolute Error", value = FALSE, thick = TRUE, shape = "curve", bigger = TRUE)
-                              
+                          mainPanel(width = 11,
+                                    plotlyOutput("elemsPlot", width = "100%", height = "600px")
+                                    # plotlyOutput("neighborsPlot"),
+                                    # plotlyOutput("distsPlot")
                           )
-                          # ,headerPanel("k-Nearest Neighboors")
-                          ,mainPanel(width = 8,
-                                    # plotlyOutput("elemsPlot"),
-                                    plotlyOutput("neighborsPlot"),
-                                    plotlyOutput("distsPlot")
+                          ,sidebarPanel(width = 1,
+                                       tags$head(
+                                           tags$style(HTML("hr {border-top: 1px solid #cbcbcb;}"))
+                                       ),
+                                       # checkboxInput("chbsnaive", label = "Seasonal Naive", value = FALSE), 
+                                       textInput(inputId = "selKtabDist", label = "K", value = res$opt_k, 
+                                                 width = NULL, placeholder = "Value for K (blank for Optimal)"),
+                                       textInput(inputId = "selDtabDist", label = "D", value = res$opt_d, 
+                                                 width = NULL, placeholder = "Value for D (blank for Optimal)"),
+                                       # actionButton("browse", "Browse"),
+                                       hr(),
+                                       materialSwitch(inputId = "chbabsDist", label = "Absolute Error", value = TRUE, status = "primary")
+                                       
+                                       
+                                       #prettyCheckbox("chbabs", label = "Absolute Error", value = FALSE, thick = TRUE, shape = "curve", bigger = TRUE)
+                                       
                           )
                           
+                          # ,mainPanel(width = 12,
+                          #            plotlyOutput("corrPlots")
+                          # )
+
+                          ,fluidRow(
+
+                              column(4, plotlyOutput("scattDistErr")),
+                              column(4, plotlyOutput("scattDistVari")),
+                              column(4, plotlyOutput("scattVariErr"))
+                          )
+                          
+                          # ,headerPanel("k-Nearest Neighboors")
+                          ,mainPanel(width = 12,
+                                     # plotlyOutput("elemsPlot"),
+                                     plotlyOutput("neighborsPlot")
+                                     # ,plotlyOutput("distsPlot")
+                          )
+                          ,mainPanel(width = 11,
+                                     # plotlyOutput("elemsPlot"),
+                                     # plotlyOutput("neighborsPlot"),
+                                     plotlyOutput("distsPlot"),
+                                     plotlyOutput("relationPlot")
+                          )
+                          ,sidebarPanel(width = 1,
+                                        tags$head(
+                                            tags$style(HTML("hr {border-top: 1px solid #cbcbcb;}"))
+                                        ),
+                                        textInput(inputId = "selPerctabDist", label = "Percentile threshold", value = 25, 
+                                                  width = NULL, placeholder = "0-1/0-100")
+                          )
+                        )
                  ),
                  
-                 tabPanel("Errors",
-                          fluidPage(
-                              headerPanel("Time Series and Predictions"),
-                              mainPanel(
-                                  plotlyOutput("errorsPlot")
-                              ),
-                              sidebarPanel(
-                                  tags$head(
-                                      tags$style(HTML("hr {border-top: 1px solid #cbcbcb;}"))
-                                  ),
-                                  checkboxInput("chbnaive", label = "Naive", value = TRUE),
-                                  hr(),
-                                  checkboxInput("chbsnaive", label = "Seasonal Naive", value = FALSE), 
-                                  textInput("s", "Lag:", value = 12),
-                                  hr(),
-                                  checkboxInput("chbload", label = "Custom", value = FALSE),
-                                  textInput("path", "File:", placeholder = "Absolute path to the file"),
-                                  actionButton("browse", "Browse"),
-                                  hr(),
-                                  materialSwitch(inputId = "chbabs", label = "Absolute Error", value = TRUE, status = "primary")
-                                  
-                                  
-                                  #prettyCheckbox("chbabs", label = "Absolute Error", value = FALSE, thick = TRUE, shape = "curve", bigger = TRUE)
-                                  
-                              ),
-                              
-                              headerPanel("Errors Table"),
-                              sidebarPanel(
-                                  DT::dataTableOutput("table_tab1"),
-                                  width = 10
-                              )
-                          )
-                          
-                 ),
+                 # tabPanel("Errors",
+                 #          fluidPage(
+                 #              headerPanel("Time Series and Predictions"),
+                 #              mainPanel(
+                 #                  plotlyOutput("errorsPlot")
+                 #              ),
+                 #              sidebarPanel(
+                 #                  tags$head(
+                 #                      tags$style(HTML("hr {border-top: 1px solid #cbcbcb;}"))
+                 #                  ),
+                 #                  checkboxInput("chbnaive", label = "Naive", value = TRUE),
+                 #                  hr(),
+                 #                  checkboxInput("chbsnaive", label = "Seasonal Naive", value = FALSE), 
+                 #                  textInput("s", "Lag:", value = 12),
+                 #                  hr(),
+                 #                  checkboxInput("chbload", label = "Custom", value = FALSE),
+                 #                  textInput("path", "File:", placeholder = "Absolute path to the file"),
+                 #                  actionButton("browse", "Browse"),
+                 #                  hr(),
+                 #                  materialSwitch(inputId = "chbabs", label = "Absolute Error", value = TRUE, status = "primary")
+                 #                  
+                 #                  
+                 #                  #prettyCheckbox("chbabs", label = "Absolute Error", value = FALSE, thick = TRUE, shape = "curve", bigger = TRUE)
+                 #                  
+                 #              ),
+                 #              
+                 #              headerPanel("Errors Table"),
+                 #              sidebarPanel(
+                 #                  DT::dataTableOutput("table_tab1"),
+                 #                  width = 10
+                 #              )
+                 #          )
+                 #          
+                 # ),
                  
                  
                  tabPanel("Optimization",
                           headerPanel(HTML(paste0("Errors for each <em>k</em> and <em>d</em> (", error_measure, " error)"))),
                           mainPanel( width = 10,
-                              plotlyOutput("contourPlot")
+                                     plotlyOutput("contourPlot")
                           ),
                           sidebarPanel(width = 2,
-                              radioButtons(inputId = "contourType", label = "Type of contour", selected = "default",
-                                           choices = list("Default" = "default", "Contour lines under Naive" = "naive", 
-                                                          "Top-values color trimmed" = "trim")),
-                              hr(),
-                              textInput(inputId = "contourMinims", label = "Number of minimums to plot:", 
-                                        value = 5, placeholder = "Leave blank to default (5)")
+                                       radioButtons(inputId = "contourType", label = "Type of contour", selected = "default",
+                                                    choices = list("Default" = "default", "Contour lines under Naive" = "naive", 
+                                                                   "Top-values color trimmed" = "trim")),
+                                       hr(),
+                                       textInput(inputId = "contourMinims", label = "Number of minimums to plot:", 
+                                                 value = 5, placeholder = "Leave blank to default (5)")
                           ),
                           headerPanel("Time Series and Predictions"),
                           mainPanel( width = 10,
-                              plotlyOutput("optPlot") 
+                                     plotlyOutput("optPlot") 
                           ),
                           sidebarPanel( width = 2, 
-                              tags$head( tags$style(HTML("hr {border-top: 1px solid #cbcbcb;}")) ),
-                              checkboxInput("chbNaiveOpt", label = "Naive", value = FALSE),
-                              hr(),
-                              checkboxInput("chbSeasNaiveOpt", label = "Seasonal Naive", value = FALSE), 
-                              textInput(inputId = "seasNaivOptLag", label = "Lag:", value = 12),
-                              hr(),
-                              materialSwitch(inputId = "chbabs_tab2", label = "Absolute Error", value = TRUE, status = "primary")
+                                        tags$head( tags$style(HTML("hr {border-top: 1px solid #cbcbcb;}")) ),
+                                        checkboxInput("chbNaiveOpt", label = "Naive", value = FALSE),
+                                        hr(),
+                                        checkboxInput("chbSeasNaiveOpt", label = "Seasonal Naive", value = FALSE), 
+                                        textInput(inputId = "seasNaivOptLag", label = "Lag:", value = 12),
+                                        hr(),
+                                        materialSwitch(inputId = "chbabs_tab2", label = "Absolute Error", value = TRUE, status = "primary")
                           ),
                           headerPanel("Errors Table"),
                           sidebarPanel(
