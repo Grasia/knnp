@@ -61,22 +61,24 @@ pkNNDistOptim <- plot_ly(name = "Neighbors distances", showlegend = TRUE, hoveri
 # Neighbors' future values variance plot
 pNeighVarianOptim <- plot_ly(name = "Future values variance", showlegend = TRUE, hoverinfo = "x+y",
                              type = "bar", marker = list(color = colPalette[1]),
-                      # x = sub_dates, y = neighs_variance)
-                      x = head(tail(dates, length(y) + 1 - train_init), length(sub_dates)), y = neighs_variance)
+                      # x = sub_dates, y = neighs_stdev)
+                      x = head(tail(dates, length(y) + 1 - train_init), length(sub_dates)), y = neighs_stdev)
 
-# Scatter plots
+# Scatter plots.
+pScatDistVariOptim <- plot_ly(name = "Distances vs Std.Dev.", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
+                            x = optimal$knn_dists, y = neighs_stdev, marker = list(opacity = 0.4),
+                            text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
+                        layout(xaxis = list(title = "Distances"), yaxis = list(title = "Std. Dev."))
+
 pScatDistErrOptim <- plot_ly(name = "Distances vs Errors", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
-                             x = optimal$knn_dists, y = residuals_matrix[1, ], 
+                             x = optimal$knn_dists, y = abs(residuals_matrix[1, ]), marker = list(opacity = 0.4),
                              text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
                     layout(xaxis = list(title = "Distances"), yaxis = list(title = "Errors"))
-pScatDistVariOptim <- plot_ly(name = "Distances vs Variance", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
-                              x = optimal$knn_dists, y = neighs_variance, 
-                              text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
-                    layout(xaxis = list(title = "Distances"), yaxis = list(title = "Variance"))
-pScatVariErrOptim <- plot_ly(name = "Variance vs Errors", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
-                             x = neighs_variance, y = residuals_matrix[1, ], 
+
+pScatVariErrOptim <- plot_ly(name = "Std. Dev. vs Errors", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
+                             x = neighs_stdev, y = abs(residuals_matrix[1, ]), marker = list(opacity = 0.4),
                              text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
-                    layout(xaxis = list(title = "Variance"), yaxis = list(title = "Errors"))
+                    layout(xaxis = list(title = "Std. Dev."), yaxis = list(title = "Errors"))
 
 
 

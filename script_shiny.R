@@ -87,7 +87,7 @@ server <- function(input, output, session) {
                             # x = sub_dates, y = newPred$knn_dists/actK)
                             x = head(tail(dates, length(y) + 1 - train_init), length(sub_dates)), y = newPred$knn_dists/actK)
             
-            future_values <- matrix(y[newPred$neighbors], nrow = 3)
+            future_values <- matrix(y[newPred$neighbors], nrow = nrow(newPred$neighbors))
             pNeighVarian <- plot_ly(name = "Future values variance", showlegend = TRUE, hoverinfo = "x+y",
                                     type = "bar", marker = list(color = colPalette[1]),
                                     # x = sub_dates, 
@@ -164,6 +164,31 @@ server <- function(input, output, session) {
     
     
     
+    output$scattDistVari <- renderPlotly({
+        pkNNDist <- plot_ly(name  = "Neighbors distances", showlegend = FALSE, hoverinfo = "x+y", type = "bar")
+        
+        if ( (input$selKtabDist == res$opt_k || input$selKtabDist == "" ) && 
+             (input$selDtabDist == res$opt_d || input$selDtabDist == "") ) {
+            pScatDistVariOptim
+        }
+        else {
+            actK <- ifelse(input$selKtabDist == "", res$opt_k, as.numeric(input$selKtabDist))
+            actD <- ifelse(input$selDtabDist == "", res$opt_d, as.numeric(input$selDtabDist))
+            
+            newPred <- knn_past(y = y, k = actK, d = actD, initial = train_init, distance = distance, 
+                                weight = weight, threads = n_threads)
+            
+            future_values <- matrix(y[newPred$neighbors], nrow = nrow(newPred$neighbors))
+            std_devs <- sqrt(rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1))
+            
+            plot_ly(name = "Distances vs Std.Dev.", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
+                    x = newPred$knn_dists, y = std_devs, marker = list(opacity = 0.4),
+                    text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
+                layout(xaxis = list(title = "Distances"), yaxis = list(title = "Std. Dev."))
+            
+        }
+    })
+    
     output$scattDistErr <- renderPlotly({
         pkNNDist <- plot_ly(name  = "Neighbors distances", showlegend = FALSE, hoverinfo = "x+y", type = "bar")
         
@@ -179,40 +204,15 @@ server <- function(input, output, session) {
                                 weight = weight, threads = n_threads)
             
             future_values <- matrix(y[newPred$neighbors], nrow = 3)
-            variances <- rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1)
+            std_devs <- rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1)
             
             plot_ly(name = "Distances vs Errors", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
-                                    x = newPred$knn_dists, y = (y_err - newPred$fitted), 
+                                    x = newPred$knn_dists, y = abs(y_err - newPred$fitted), marker = list(opacity = 0.4),
                                     text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
                 layout(xaxis = list(title = "Distances"), yaxis = list(title = "Errors"))
             
         }
 
-    })
-    
-    output$scattDistVari <- renderPlotly({
-        pkNNDist <- plot_ly(name  = "Neighbors distances", showlegend = FALSE, hoverinfo = "x+y", type = "bar")
-        
-        if ( (input$selKtabDist == res$opt_k || input$selKtabDist == "" ) && 
-             (input$selDtabDist == res$opt_d || input$selDtabDist == "") ) {
-            pScatDistVariOptim
-        }
-        else {
-            actK <- ifelse(input$selKtabDist == "", res$opt_k, as.numeric(input$selKtabDist))
-            actD <- ifelse(input$selDtabDist == "", res$opt_d, as.numeric(input$selDtabDist))
-            
-            newPred <- knn_past(y = y, k = actK, d = actD, initial = train_init, distance = distance, 
-                                weight = weight, threads = n_threads)
-            
-            future_values <- matrix(y[newPred$neighbors], nrow = 3)
-            variances <- rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1)
-            
-            plot_ly(name = "Distances vs Variance", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
-                                     x = newPred$knn_dists, y = variances, 
-                                     text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
-                layout(xaxis = list(title = "Distances"), yaxis = list(title = "Variance"))
-            
-        }
     })
     
     output$scattVariErr <- renderPlotly({
@@ -229,13 +229,13 @@ server <- function(input, output, session) {
             newPred <- knn_past(y = y, k = actK, d = actD, initial = train_init, distance = distance, 
                                 weight = weight, threads = n_threads)
             
-            future_values <- matrix(y[newPred$neighbors], nrow = 3)
-            variances <- rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1)
+            future_values <- matrix(y[newPred$neighbors], nrow = nrow(newPred$neighbors))
+            std_devs <- sqrt(rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1))
             
-            plot_ly(name = "Variance vs Errors", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
-                                    x = variances, y = (y_err - newPred$fitted), 
+            plot_ly(name = "Std.Dev. vs Errors", type = 'scatter', mode = "markers", hoverinfo = "x+y+text",
+                                    x = std_devs, y = abs(y_err - newPred$fitted), marker = list(opacity = 0.4),
                                     text = head(tail(dates, length(y) + 1 - train_init), length(sub_dates))) %>%
-                layout(xaxis = list(title = "Variance"), yaxis = list(title = "Errors"))
+                layout(xaxis = list(title = "Std. Dev."), yaxis = list(title = "Errors"))
             
         }
     })
@@ -1017,12 +1017,11 @@ ui <- navbarPage("",
                           # )
 
                           ,fluidRow(
-
-                              column(4, plotlyOutput("scattDistErr")),
                               column(4, plotlyOutput("scattDistVari")),
+                              column(4, plotlyOutput("scattDistErr")),
                               column(4, plotlyOutput("scattVariErr"))
                           )
-                          
+                          ,hr()
                           # ,headerPanel("k-Nearest Neighboors")
                           ,mainPanel(width = 12,
                                      # plotlyOutput("elemsPlot"),

@@ -7,9 +7,9 @@ library(tseries)
 #####
 # Load to Enviroment "knn_param_search", "knn_past" and "knn_elements"
 
-y <- nottem
+# y <- nottem
 
-# y <- datasets::sunspot.month
+y <- datasets::sunspot.month
 dates <- as.Date(time(y))
 full_dates <- as.Date(ts( c(y,1), start = time(y)[1], frequency = frequency(y) ))
 
@@ -38,8 +38,8 @@ distance <- "manhattan"
 error_measure <- "MAE"
 weight <- "proportional"
 n_threads <- 6
-ks <-  1:50
-ds <- 1:50
+ks <-  1:85
+ds <- 1:85
 min_y <- min(y)
 max_y <- max(y)
 
@@ -154,6 +154,6 @@ selected_points <- matrix(rep(FALSE, NROW(res$errors) * NCOL(res$errors)), nrow 
 previous_countour <<- "default"
 
 # Variances calc
-future_values <- matrix(y[optimal$neighbors], nrow = 3)
-neighs_variance <- rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1)
+future_values <- matrix(y[optimal$neighbors], nrow = nrow(optimal$neighbors))
+neighs_stdev <- sqrt(rowSums((t(future_values) - colMeans(future_values))**2) / (nrow(future_values) - 1))
 rm(future_values)
